@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Neighborhood Traffic Calming Request</title>
+
+
+<!-- LOAD LEAFLET.JS MAPPING LIBRARY	-->
+<link rel="stylesheet" href="leaflet/leaflet.css" />
+<script src="leaflet/leaflet.js"></script>
+
+
+
+<!-- LOAD DRAWING PLUGIN-->	
+<link rel="stylesheet" href="Draw/dist/leaflet.draw.css" />
+<script src="Draw/src/Leaflet.draw.js"></script>
+<script src="Draw/src/edit/handler/Edit.Poly.js"></script>
+<script src="Draw/src/edit/handler/Edit.SimpleShape.js"></script>
+<script src="Draw/src/edit/handler/Edit.Circle.js"></script>
+<script src="Draw/src/edit/handler/Edit.Rectangle.js"></script>
+<script src="Draw/src/draw/handler/Draw.Feature.js"></script>
+<script src="Draw/src/draw/handler/Draw.Polyline.js"></script>
+<script src="Draw/src/draw/handler/Draw.Polygon.js"></script>
+<script src="Draw/src/draw/handler/Draw.SimpleShape.js"></script>
+<script src="Draw/src/draw/handler/Draw.Rectangle.js"></script>
+<script src="Draw/src/draw/handler/Draw.Circle.js"></script>
+<script src="Draw/src/draw/handler/Draw.Marker.js"></script>
+<script src="Draw/src/ext/LatLngUtil.js"></script>
+<script src="Draw/src/ext/GeometryUtil.js"></script>
+<script src="Draw/src/ext/LineUtil.Intersect.js"></script>
+<script src="Draw/src/ext/Polyline.Intersect.js"></script>
+<script src="Draw/src/ext/Polygon.Intersect.js"></script>
+<script src="Draw/src/Control.Draw.js"></script>
+<script src="Draw/src/Tooltip.js"></script>
+<script src="Draw/src/Toolbar.js"></script>
+<script src="Draw/src/draw/DrawToolbar.js"></script>
+<script src="Draw/src/edit/EditToolbar.js"></script>
+<script src="Draw/src/edit/handler/EditToolbar.Edit.js"></script>
+<script src="Draw/src/edit/handler/EditToolbar.Delete.js"></script>
+
+<!-- LOAD MAKI MARKERS PLUGIN -->
+<script src="MakiMarkers/Leaflet.MakiMarkers.js"></script>
+
+<!-- Old IE needs JSON2 and Turf is for searching REST API -->	
+<script src="json2.js"></script>
+<script src="http://api.tiles.mapbox.com/mapbox.js/plugins/turf/v2.0.0/turf.min.js"></script>
+<!-- LOAD ESRI FOR WRITING TO DB -->
+<script src="esri-leaflet.js"></script>	
+<script src="esri-leaflet-renderers.js"></script>
+
+
+
+<!-- LOAD CONFIG -->
+<script src="configuration.js"></script>
+<script src="emergency.js"></script>
+<script src="EsriVectorPlugin/lvector.js"></script>
+<script src="EsriVectorPlugin/Layer.js"></script>
+<script src="EsriVectorPlugin/AGS.js"></script>
+	
+<style>
+
+html, body,  #map {
+        width : 100%;
+        height : 100%;
+     		   }
+#AddressSearchBox{
+	background-color: rgba(255, 255, 255, 0.5);
+   	 border: 1px solid #000;
+    	-moz-border-radius: 15px;
+    	border-radius: 15px;
+	height:40px;
+	width:350px;
+	padding-top:10px;
+	padding-left:5px;
+	position: absolute;
+    	left: 40%;
+   	top: 10px;
+   	z-index: 100000;
+	}
+</style>
+
+</head>
+<body>
+
+
+<!-- CREATE SEARCH BOX THAT USES GEOCODING SERVICE GeocodeAddress() -->
+<div style="text-align: center">
+  <div style="text-align: left; margin: 0 auto; width: 50%;">
+    <div id="AddressSearchBox"> <center><b>Address:</b><input type='text' id='addr' name='to' onkeypress='handleKeyPress(event);' placeholder='central/1st'><button onclick='GeocodeAddress();'>Search</button><center></div>
+  </div>
+</div>
+
+<!-- CREATE DIV TO HOLD THE MAP -->
+<div id="map"></div>
+
+
+<script>
+var yousearchedfor;
+var apoint;
+var ptjson;
+var permitData={};
+var updatepoint;
+
+permitData.NTMP_Request_ID="";
+permitData.Street_Name="";
+permitData.Requestor="";
+permitData.Date_Request_Received=Date.now();
+permitData.City_Council_Dist=0;
+permitData.Neighborhood_Assoc="";
+permitData.Concern=" ";
+
+
+var thexy;
+
+var pt = L.esri.featureLayer(config.featureURL);
+
+
+
+var lat,long,addressFromAddressSearchBox, addressAsJSON, xy, x, y, theDate, id, council, na;
+
+
+document.getElementById("AddressSearchBox").addEventListener("click", function(e) {
+	e.stopPropagation(); //prevent mouse click from propagating up to map, otherwise map will pan where it is clicked
+	
+});
+
+document.getElementById("addr").addEventListener("click", function(e) {
+	e.stopPropagation(); //prevent mouse click from propagating up to map, otherwise map will pan where it is clicked
+	
+});
+
+
+
+
+
+
+
+function GeocodeAddress(){
+	addressFromAddressSearchBox=document.getElementById("addr").value;
+	var params = "Street="+document.getElementById("addr").value+"&f=json&outSR=4326";
+	
+	if (window.XMLHttpRequest) { http=new XMLHttpRequest(); }else {  http=new ActiveXObject("Msxml2.XMLHTTP");   }
+	http.open("POST", config.geocode, true);
+	http.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+	http.onreadystatechange = function() {
+	if(http.readyState == 4 && http.status == 200) {
+		
+		thexy= JSON.parse(http.responseText);
+		if(thexy.candidates.length<1){alert("Address not found. Please try again");}else{
+
+
+		x=thexy.candidates[0].location.x;
+		y=thexy.candidates[0].location.y;
+
+	
+		xyToStreet=thexy.candidates[0].address;
+		yousearchedfor = L.marker([thexy.candidates[0].location.y,thexy.candidates[0].location.x]).addTo(map).bindPopup("<div id='pop'><h3>Complete Form and Submit</h3>Requestor: <input type='text' id='geocoderequestname' ><br><br><h3>Concerns</h3>Safety:<input type='checkbox' name='safety' value='safety'/><br/>Speeding:<input type='checkbox' name='safety' value='speeding'/><br/>Excess Traffic:<input type='checkbox' name='safety' value='excess'/><br/>Cut-Through Traffic:<input type='checkbox' name='safety' value='cut'/><br/>Bicycle or Pedestrian:<input type='checkbox' name='safety' value='bikeped'/><br/>Commercial Vehicle Registration:<input type='checkbox' name='safety' value='cvr'/><br/>Parking:<input type='checkbox' name='safety' value='parking'/><br/>Noise:<input type='checkbox' name='safety' value='noise'/><br/>Other:<input type='checkbox' name='safety' value='other'/><br/>Desc:<input type='text' id='otherdesc'><br><br><button id='geocodesubmitbutton' onclick='geocodeSubmit()'>Submit</button></div>").openPopup();
+		map.setView([thexy.candidates[0].location.y,thexy.candidates[0].location.x],18);
+		permitData.Date_Request_Received=Date.now();
+		permitData.Street_Name=thexy.candidates[0].address;
+		na(x,y);
+		council(x,y);
+		emergency(x,y);
+		document.getElementById("pop").addEventListener("click", function(ee) {ee.stopPropagation(); });
+
+		
+
+	}//end else
+
+
+	}//end if
+
+	}
+	http.send(params);
+};
+
+
+function geocodeSubmit(){
+
+	permitData.Requestor=document.getElementById('geocoderequestname').value;
+	var checkedBoxes = getCheckedBoxes("safety");
+	if(checkedBoxes===null||permitData.Requestor==""||permitData.Requestor==" "){alert("Select a Concern or Enter a Valid Requestor");}else{
+		permitData.Concern=checkedBoxes.join(',')+" "+document.getElementById('otherdesc').value;
+		addPointToDB(yousearchedfor);
+	}
+
+				
+
+}
+
+function handleKeyPress(e){
+ var key=e.keyCode || e.which;
+  if (key==13){
+     GeocodeAddress();
+  }
+};
+
+
+var attributionlink='<a href="http://www.cabq.gov/municipaldevelopment">DMD</a>';
+var map = L.map('map').setView([35.10418,-106.62987], 12); 
+var tiles = L.tileLayer("http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'Open Street Map. '+attributionlink}).addTo(map);
+
+var userIcon = L.MakiMarkers.icon({icon: "town-hall", color: "#0000FF", size: "l"});         
+
+
+
+
+var drawnItems = new L.FeatureGroup();
+map.addLayer(drawnItems);
+
+		var drawControl = new L.Control.Draw({
+			draw: {
+				marker: {icon: userIcon},
+				position: 'topleft',
+				polygon: false,
+				polyline: false,
+				circle:false,
+				rectangle: false
+			},
+			edit: {
+				featureGroup: drawnItems,
+				edit: false
+			}
+		});
+		map.addControl(drawControl);
+
+		map.on('draw:created', function (e) {
+			var type = e.layerType;
+				layer = e.layer;
+
+			if (type === 'marker') {
+				
+				var tempjson=layer.toGeoJSON();
+				lat= tempjson.geometry.coordinates[1];
+				long=tempjson.geometry.coordinates[0];
+
+				emergency(long,lat);			
+				na(long,lat);
+
+				council(long,lat);
+				reverseGeocode();
+				
+				
+				permitData.Date_Request_Received=Date.now();
+				
+				apoint=L.marker([lat,long]).bindPopup("<h3>Complete Form and Submit</h3>Requestor: <input type='text' id='requestname'><br><br><h3>Concerns</h3>Safety:<input type='checkbox' name='safety' value='safety'/><br/>Speeding:<input type='checkbox' name='safety' value='speeding'/><br/>Excess Traffic:<input type='checkbox' name='safety' value='excess'/><br/>Cut-Through Traffic:<input type='checkbox' name='safety' value='cut'/><br/>Bicycle or Pedestrian:<input type='checkbox' name='safety' value='bikeped'/><br/>Commercial Vehicle Registration:<input type='checkbox' name='safety' value='cvr'/><br/>Parking:<input type='checkbox' name='safety' value='parking'/><br/>Noise:<input type='checkbox' name='safety' value='noise'/><br/>Other:<input type='checkbox' name='safety' value='other'/><br/>Desc:<input type='text' id='otherdesc'><br><br><button id='submitbutton' onclick='drawmarkerSubmit()'>Submit</button>").addTo(map).openPopup();
+				var x = document.getElementById("safety");
+						
+				
+					
+				
+	
+					}
+
+			
+
+			//drawnItems.addLayer(layer);
+		});
+
+
+function drawmarkerSubmit(){
+
+	permitData.Requestor=document.getElementById('requestname').value;
+	var checkedBoxes = getCheckedBoxes("safety");
+	if(checkedBoxes===null||permitData.Requestor==""||permitData.Requestor==" "){alert("Select a Concern or Enter a Valid Requestor");}else{
+		permitData.Concern=checkedBoxes.join(',')+" "+document.getElementById('otherdesc').value;
+		addPointToDB(apoint);}
+
+
+
+
+}
+
+
+function getCheckedBoxes(chkboxName) {
+  var checkboxes = document.getElementsByName(chkboxName);
+  var checkboxesChecked = [];
+ 
+  for (var i=0; i<checkboxes.length; i++) {
+     // And stick the checked ones onto an array...
+     if (checkboxes[i].checked) {
+        checkboxesChecked.push(checkboxes[i].value);
+     }
+  }
+  
+  return checkboxesChecked.length > 0 ? checkboxesChecked : null;
+}
+
+
+
+
+
+
+
+function reverseGeocode(){
+
+var geocodeparams = 'location={"x":'+long+',"y":'+lat+',"spatialReference":{"wkid":4326}}&distance=1000&f=json'; 
+var http;
+
+		if (window.XMLHttpRequest){
+   			http=new XMLHttpRequest();
+		}
+	
+		else {
+  			http=new ActiveXObject("Msxml2.XMLHTTP");   
+  		}	
+		http.open("POST", config.reverse, true);
+		http.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+		http.onreadystatechange = function() {//Call a function when the state changes.
+			if(http.readyState == 4 && http.status == 200) {
+				
+				a=JSON.parse(http.responseText);
+				console.log(a.address.Street);
+				permitData.Street_Name =a.address.Street;
+				permitData.Date_Request_Received=Date.now();
+				
+				
+				
+			}
+		}
+		http.send(geocodeparams);
+
+
+
+
+
+};//end reverseGeocode()
+
+
+
+
+
+
+
+
+
+function addPointToDB(m){
+
+
+			
+			ptjson=m.toGeoJSON();
+			
+			
+			ptjson.properties.Concern=permitData.Concern;
+			ptjson.properties.Street_Name=permitData.Street_Name;
+			ptjson.properties.Requestor=permitData.Requestor;
+			ptjson.properties.Date_Request_Received=permitData.Date_Request_Received;
+			ptjson.properties.City_Council_Dist=permitData.City_Council_Dist;
+			ptjson.properties.Neighborhood_Assoc=permitData.Neighborhood_Assoc;
+			ptjson.properties.From_Street=permitData.From_Street;
+			ptjson.properties.To_Street=permitData.To_Street;
+
+console.log(ptjson);
+
+			pt.addFeature(ptjson, function(error, response) {
+ 	     			console.log(error, response);
+				
+				//console.log(done);
+				
+				
+				ptjson.properties.OBJECTID=response.objectId;
+				addID(ptjson);
+				
+			
+ 			 });
+
+
+
+			
+				
+				
+
+
+};//addpointtodb
+
+
+
+
+
+
+function addID(updatepoint){
+var len;
+var pid=0;
+pt.query().where("1=1").run(function(e,f){
+
+	len=parseInt(f.features.length);
+	if (len==0){
+		pid=1; 
+		updatepoint.properties.NTMP_Request_ID=pid;	
+	} else{updatepoint.properties.NTMP_Request_ID=parseInt(len);console.log(len);}
+
+
+
+pt.updateFeature(updatepoint, function(error, response) {
+ 	     console.log(error, response);
+			done=config.redirectURL+permitData.Requestor+"&st="+permitData.Street_Name+"&id="+updatepoint.properties.NTMP_Request_ID;	
+			window.location.assign(done);			
+ 			 });
+
+
+
+});
+
+}
+
+
+
+
+function emergency(xx,yy){
+	var a=L.marker([yy,xx]);
+	var b=a.toGeoJSON();
+	var buffered = turf.buffer(b,0.006,"miles");
+	var result = turf.featurecollection(buffered.features.concat(b));
+	var g='{"rings":'+JSON.stringify(buffered.features[0].geometry.coordinates)+'}';
+	var enveloped = turf.envelope(result);
+	var params="f=json&outSR=4326&outFields=*&geometryType=esriGeometryPolygon&spatialRel=esriSpatialRelIntersects&inSR=4326&geometry="+g;
+
+	var url="http://gisdmd.cabq.gov/dmdview/rest/services/public/EmergencyRoutes/mapServer/4/query";
+
+
+
+		var http = new XMLHttpRequest();
+		http.open("POST", url, true);
+		http.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+		http.onreadystatechange = function() {//Call a function when the state changes.
+		if(http.readyState == 4 && http.status == 200) {
+			
+				var d=JSON.parse(http.responseText);
+		
+				
+					if(d.features[0].attributes.RouteCategory=="Emergency_School" ||d.features[0].attributes.RouteCategory=="Emergency_Hospital" ||d.features[0].attributes.RouteCategory=="Emergency_General" ){alert("Speed Bumps are not allowed on designated Emergency routes");}else{}
+				
+				
+				
+					
+		}
+	}
+	http.send(params);
+
+
+
+};//emergency
+
+
+
+
+
+
+function na(xx,yy){
+
+var url=config.neighborhoodAssociationURL;
+var params="f=json&outSR=4326&outFields=*&geometryType=esriGeometryPoint&spatialRel=esriSpatialRelWithin&inSR=4326&geometry="+xx+","+yy;
+
+
+		var http = new XMLHttpRequest();
+		http.open("POST", url, true);
+		http.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+		http.onreadystatechange = function() {//Call a function when the state changes.
+		if(http.readyState == 4 && http.status == 200) {
+			
+				var d=JSON.parse(http.responseText);
+				
+					if(d.features[0]===undefined){}
+				console.log("NA Result: "+d.features[0].attributes.ASSOCIATIONNAME);
+				
+				permitData.Neighborhood_Assoc=d.features[0].attributes.ASSOCIATIONNAME;
+					
+		}
+	}
+	http.send(params);
+
+
+
+};//neighborhood
+
+
+
+
+
+function council(x,y){
+var url=config.councilURL;
+var params="f=json&outSR=4326&outFields=*&geometryType=esriGeometryPoint&spatialRel=esriSpatialRelWithin&inSR=4326&geometry="+x+","+y;
+
+
+		var http = new XMLHttpRequest();
+		http.open("POST", url, true);
+		http.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+		http.onreadystatechange = function() {//Call a function when the state changes.
+		if(http.readyState == 4 && http.status == 200) {
+			
+				var d=JSON.parse(http.responseText);
+				
+				if(d.features[0]===undefined){}
+				console.log("Council Result: "+d.features[0].attributes.COUNCILORNAME);
+				
+			permitData.City_Council_Dist=d.features[0].attributes.DISTRICTNUMBER;
+				
+		}
+	}
+	http.send(params);
+
+
+
+};//council
+
+
+
+var fromto;
+
+function from(){fromto="from";}
+
+function to(){fromto="to";}
+
+
+
+var fromtobox = L.control({ position: 'topleft' });
+
+
+fromtobox.onAdd = function(map) {
+    controladded=true;
+    this._div = L.DomUtil.create('div', 'fromtobox-css-class');
+    this._div.innerHTML = "<button onclick='from()'>Select From Street:</button>&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp<input type='text' id='frompicked'><br><button onclick='to()'>Select To Street:</button>&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp<input type='text' id='topicked'><br>";
+    return this._div;
+};
+
+fromtobox.addTo(map);
+
+
+var fromtoarray=[];
+var fromstreetpicked;
+var tostreetpicked;
+
+
+
+
+
+
+
+var street = new lvector.AGS({
+   url: "http://coagisweb.cabq.gov/arcgis/rest/services/public/dynamicstreets/MapServer/1",
+   fields: "*",
+   uniqueField: "OBJECTID",
+	scaleRange: [17, 28],
+ 	showAll: false,
+	symbology: {
+       	 type: "single",
+       	 vectorOptions: {
+            weight: 8,
+            opacity: 0.2,
+            color: "blue",
+	    fillOpacity:0
+        }    
+    },
+   
+   // popupTemplate:"<h3>Selected</h3>",
+    clickEvent: function (feature, event) {
+
+		if(fromto=="from"){
+			fromstreetpicked = document.getElementById("frompicked");
+			fromstreetpicked.value=feature.properties.STREETNAME;
+                       permitData.From_Street=feature.properties.STREETNAME;
+
+
+		}
+		else if(fromto=="to"){
+			tostreetpicked = document.getElementById("topicked");
+                         tostreetpicked.value=feature.properties.STREETNAME;
+			permitData.To_Street=feature.properties.STREETNAME;
+                       
+		}
+		
+		else{alert("Please click the from or to button first.");}
+        
+    }
+}).setMap(map);
+
+var street2 = new lvector.AGS({
+   url: "http://coagisweb.cabq.gov/arcgis/rest/services/public/dynamicstreets/MapServer/2",
+   fields: "*",
+   uniqueField: "OBJECTID",
+	scaleRange: [17, 28],
+ 	showAll: false,
+	symbology: {
+       	 type: "single",
+       	 vectorOptions: {
+            weight: 8,
+            opacity: 0.2,
+            color: "blue",
+	    fillOpacity:0
+        }    
+    },
+   
+   // popupTemplate:"<h3>Selected</h3>",
+    clickEvent: function (feature, event) {
+
+		if(fromto=="from"){
+			fromstreetpicked = document.getElementById("frompicked");
+			fromstreetpicked.value=feature.properties.STREETNAME;
+                       permitData.From_Street=feature.properties.STREETNAME;
+
+
+		}
+		else if(fromto=="to"){
+			tostreetpicked = document.getElementById("topicked");
+                         tostreetpicked.value=feature.properties.STREETNAME;
+			permitData.To_Street=feature.properties.STREETNAME;
+                       
+		}
+		
+		else{alert("Please click the from or to button first.");}
+        
+    }
+}).setMap(map);
+
+var emergencyRoutes = L.esri.featureLayer("http://gisdmd.cabq.gov/dmdview/rest/services/public/EmergencyRoutes/mapServer/4",{minZoom:16}).addTo(map);
+
+
+
+</script>
+
+
+
+
+
+
+</body>
+</html>
+
